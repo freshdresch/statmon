@@ -198,22 +198,26 @@ int main(int argc, char *argv[])
     out.precision(3);
 
 	out << "time," << metric << endl;
-	for (const auto& st : data)
-		out << st.timeDelta << "," << st.value << endl;
+	vector<InterfaceStat>::iterator it;
+	for (it = data.begin(); it != data.end(); ++it)
+	{
+		ifstat = *it;
+		out << ifstat.timeDelta << "," << ifstat.value << endl;
+	}
 	out.close();
 
 	#ifdef DEBUG
 	cout.setf(ios::fixed,ios::floatfield);
     cout.precision(3);
-	for (const auto& st : data)
+	for (it = data.begin(); it != data.end(); ++it)
 	{
-		cout << "Time: " << st.timeDelta << "\t" << nic << " " 
-			 << metric << ": " << st.value << endl;
+		ifstat = *it;
+		cout << "Time: " << ifstat.timeDelta << "\t" << nic << " " 
+			 << metric << ": " << ifstat.value << endl;
 	}
 	cout << endl;
-	cout << "Terminated peacefully" << endl;
 	#endif
-
+	// terminate responsibly
 	teardown(sock, link_cache);
 	return 0;
 }
