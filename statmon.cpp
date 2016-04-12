@@ -65,7 +65,7 @@ bool parseMetric(const string &metric, rtnl_link_stat_id_t &statId)
 
 void printUsage()
 {
-	cout << "Usage: statmon iface metric" << endl;
+	cout << "Usage: statmon iface metric output" << endl;
 	cout << endl;
 	cout << "iface: which interface you want to measure." << endl;
 	cout << "metric: which quantity you want to measure." << endl;
@@ -79,12 +79,13 @@ void printUsage()
 	cout << "    tx_dropped" << endl;
 	cout << "    rx_fifo_errors" << endl;
 	cout << "    tx_fifo_errors" << endl;
+	cout << "output: the name of the output csv file for the measurements." << endl;
 	cout << endl;
 }
 
 int main(int argc, char *argv[])
 {
-	if (argc != 3)
+	if (argc != 4)
 	{
 		printUsage();
 		return 1;
@@ -92,6 +93,8 @@ int main(int argc, char *argv[])
 
 	string nic(argv[1]);
 	string metric(argv[2]);
+	string fname(argv[3]);
+
 	rtnl_link_stat_id_t statId;
 	if ( !parseMetric(metric, statId) )
 	{
@@ -193,7 +196,7 @@ int main(int argc, char *argv[])
 
 	cout << endl; // just for clean CTRL-C aftermath
 
-	ofstream out("measurements.csv");
+	ofstream out( fname.c_str() );
     out.setf(ios::fixed,ios::floatfield);
     out.precision(3);
 
