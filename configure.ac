@@ -1,6 +1,6 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
-AC_PREREQ([2.69])
+AC_PREREQ([2.59])
 AC_INIT([statmon], [0.1], [adam.r.drescher@gmail.com])
 AC_CONFIG_SRCDIR([statmon.cpp])
 AC_CONFIG_AUX_DIR(config)
@@ -18,7 +18,7 @@ AC_ARG_ENABLE([debug],
   no)  debug=false ;;
   *) AC_MSG_ERROR([bad value ${enableval} for --enable-debug]) ;;
 esac],[debug=false])
-AM_CONDITIONAL([DEBUG], [test "${debug}" = "true"])
+AM_CONDITIONAL([DEBUG], [test "x${debug}" = "xtrue"])
 
 # check for necessary programs.
 AC_PATH_TOOL(PKG_CONFIG, pkg-config)
@@ -41,8 +41,10 @@ AC_CHECK_FUNCS([gettimeofday signal])
 # libnl-route-3.0 is a superset of libnl-3.0 
 PKG_CHECK_MODULES(LIBNL3, libnl-route-3.0 >= 3.1, [have_libnl3=yes], [have_libnl3=no])
 if (test "${have_libnl3}" = "yes"); then
-	   CXXFLAGS+=" $LIBNL3_CFLAGS"
-	   LIBS+=" $LIBNL3_LIBS"
+   CXXFLAGS+=" $LIBNL3_CFLAGS"
+   LIBS+=" $LIBNL3_LIBS"
+else
+	AC_MSG_ERROR([You need libnl-3.0 (netlink) to build this program!])	
 fi
 
 AC_OUTPUT(Makefile)
