@@ -9,10 +9,9 @@ OBJECTS = $(SOURCES:.cpp=.o)
 # Name of executable target:
 EXECUTABLE = statmon
 
-# add flags for libnl libraries via pkg-config
-# note: libnl-route-3.0 is a superset of libnl-3.0 flags
-CFLAGS += `pkg-config --cflags libnl-route-3.0`
-LDFLAGS += `pkg-config --libs libnl-route-3.0`
+# add flags for libnl libraries
+CFLAGS += -I/usr/include/libnl3 
+LDFLAGS += -lnl-route-3 -lnl-3
 
 .PHONY: all debug
 
