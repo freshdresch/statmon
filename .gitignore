@@ -1,3 +1,11 @@
+aclocal.m4
+config/
 statmon.o
 statmon
 *.csv
+.deps/
+Makefile.in
+autom4te.cache/
+config.log
+config.status
+configure
