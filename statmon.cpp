@@ -70,7 +70,7 @@ void exitHandler(int dummy)
     running = 0;
 }
 
-void teardown(nl_sock *&sock, nl_cache *&link_cache)
+void teardownNetlink(nl_sock *&sock, nl_cache *&link_cache)
 {
 	nl_close(sock);
 	nl_cache_free(link_cache);
@@ -114,7 +114,6 @@ void collectData(const TargetVec &targets,
 	nl_cache *link_cache;
 	setupNetlink(sock, link_cache);
 
-	TargetVec::const_iterator it;
 	rtnl_link *link;
 	InterfaceStat ifstat;
 	timeval time;
@@ -138,27 +137,27 @@ void collectData(const TargetVec &targets,
 		if ( unlikely(err < 0) )
 		{
 			nl_perror(err, "Unable to resync cache");
-			teardown(sock, link_cache);
+			teardownNetlink(sock, link_cache);
 			exit(6);
 		}
 
-		for (it = targets.begin(); it != targets.end(); ++it)
+		for (const auto &target : targets)
 		{
-			link = rtnl_link_get_by_name( link_cache, it->iface.c_str() );
+			link = rtnl_link_get_by_name( link_cache, target.iface.c_str() );
 			if ( unlikely(!link) )
 			{
-				cerr << "[ERROR] rtnl: failed to get the link " << it->iface 
+				cerr << "[ERROR] rtnl: failed to get the link " << target.iface 
 					 << " by name." << endl;
-				teardown(sock, link_cache);
+				teardownNetlink(sock, link_cache);
 				exit(7);
 			}
 
-			ifstat.value = rtnl_link_get_stat(link, it->statId);
+			ifstat.value = rtnl_link_get_stat(link, target.statId);
 			gettimeofday(&time, NULL);
 			end = time.tv_sec + (time.tv_usec / 1000000.0);
 			diff = end - start;
 			ifstat.timeDelta = diff;
-			data[ *it ].push_back(ifstat);
+			data[target].push_back(ifstat);
 		}
 
 		gettimeofday(&time, NULL);
@@ -167,7 +166,7 @@ void collectData(const TargetVec &targets,
 		usleep( SAMPLE_RATE - (offset - base) ); 
 	}
 	// terminate responsibly
-	teardown(sock, link_cache);
+	teardownNetlink(sock, link_cache);
 	cout << endl; // just for clean CTRL-C aftermath
 }
 
@@ -285,27 +284,18 @@ int main(int argc, char *argv[])
 
 	TargetVec targets;
 	parseConfigFile(argv, targets, inputFile);
-
-	TargetVec::iterator itr;
 	rtnl_link_stat_id_t statId;
-	for (itr = targets.begin(); itr != targets.end(); ++itr)
+	for (auto &target : targets)
 	{
-		if ( !parseMetric(itr->metric, statId) )
+		if ( !parseMetric(target.metric, statId) )
 		{
 			cerr << "[ERROR] provided metric is invalid." << endl;
 			cerr << endl;
 			printUsage();
 			return 2;
 		}
-		itr->statId = statId;
+		target.statId = statId;
 	}
-
-	#ifdef DEBUG
-	for (itr = targets.begin(); itr != targets.end(); ++itr)
-	{
-		cout << itr->iface << " " << itr->metric << " " << itr->statId << endl;
-	}
-	#endif
 
 	signal(SIGINT, exitHandler);
 	signal(SIGTERM, exitHandler);
@@ -316,161 +306,29 @@ int main(int argc, char *argv[])
 	ofstream out( fname.c_str() );
     out.setf(ios::fixed,ios::floatfield);
     out.precision(3);
+	#ifdef DEBUG
+	cout.setf(ios::fixed,ios::floatfield);
+    cout.precision(3);
+	#endif
 
 	out << "time,iface,metric,value" << endl;
 	MeasureTarget target;
-	InterfaceStat ifstat;
 	StatVec stats;
-	IfaceData::iterator dataItr;
-	StatVec::iterator statItr;
-	for (dataItr = data.begin(); dataItr != data.end(); ++dataItr)
+	for (const auto &d : data)
 	{
-		target = dataItr->first;
-		stats = dataItr->second;
-		for (statItr = stats.begin(); statItr != stats.end(); ++statItr)
+		target = d.first;
+		stats = d.second;
+		for (const auto &ifstat : stats)
 		{
 			out << ifstat.timeDelta << "," << target.iface << "," 
 				<< target.metric << "," << ifstat.value << endl;
-		}
-	}
-	out.close();
-
-	#ifdef DEBUG
-	cout.setf(ios::fixed,ios::floatfield);
-    cout.precision(3);
-	for (dataItr = data.begin(); dataItr != data.end(); ++dataItr)
-	{
-		target = dataItr->first;
-		stats = dataItr->second;
-		for (statItr = stats.begin(); statItr != stats.end(); ++statItr)
-		{
+			#ifdef DEBUG
 			cout << ifstat.timeDelta << "," << target.iface << "," 
 				 << target.metric << "," << ifstat.value << endl;
+			#endif
 		}
-	}
-	cout << endl;
-	#endif
-	return 0;
-
-	/*
-	signal(SIGINT, exitHandler);
-	signal(SIGTERM, exitHandler);
-
-	struct nl_sock *sock;
-	struct nl_cache *link_cache;
-	struct rtnl_link *link;
-
-	uint64_t rtn_stat = 0;
-	int err = 0;
-	
-	sock = nl_socket_alloc();
-	if (!sock) 
-	{
-		cerr << "[ERROR] Unable to allocate netlink socket." << endl;
-		return 3;
-	}
-	
-	err = nl_connect(sock, NETLINK_ROUTE);
-	if (err < 0) 
-	{
-		nl_perror(err, "Unable to connect socket");
-		nl_socket_free(sock);
-		return 4;
-	}
-	
-	err = rtnl_link_alloc_cache(sock, AF_UNSPEC, &link_cache);
-	if (err < 0)
-    {
-		nl_perror(err, "Unable to allocate cache");
-		nl_socket_free(sock);
-		return 5;
-    }
-
-	link = rtnl_link_get_by_name(link_cache, iface.c_str());
-	if (!link)
-    {
-		cerr << "[ERROR] rtnl: failed to get the link by name." << endl;
-		teardown(sock, link_cache);
-		return 6;
-    }
-
-	struct InterfaceStat ifstat;
-	vector<InterfaceStat> data;
-	struct timeval time;
-
-	// end - start gives us the program time without a frame of reference
-	double diff, start, end;
-	// offset - base tells us how long our monitoring loop took
-	// so we sleep the correct amount
-	double offset, base;
-	const double MICRO = 1000000.0;
-	const unsigned int SAMPLE_RATE = 100000;
-
-	gettimeofday(&time, NULL);
-	start = time.tv_sec + (time.tv_usec / MICRO);
-	while(running)
-	{
-		gettimeofday(&time, NULL);
-		base = time.tv_usec;
-
-		err = nl_cache_resync(sock, link_cache, NULL, NULL);
-		if ( unlikely(err < 0) )
-		{
-			nl_perror(err, "Unable to resync cache");
-			teardown(sock, link_cache);
-			return 7;
-		}
-
-		link = rtnl_link_get_by_name(link_cache, iface.c_str());
-		if ( unlikely(!link) )
-		{
-			cerr << "[ERROR] rtnl: failed to get the link by name." << endl;
-			teardown(sock, link_cache);
-			return 6;
-		}
-
-		rtn_stat = rtnl_link_get_stat(link, statId);
-		ifstat.value = rtn_stat;
-
-		gettimeofday(&time, NULL);
-		end = time.tv_sec + (time.tv_usec / 1000000.0);
-		diff = end - start;
-		ifstat.timeDelta = diff;
-		data.push_back(ifstat);
-
-		gettimeofday(&time, NULL);
-		offset = time.tv_usec;
-		usleep( SAMPLE_RATE - (offset - base) ); // sleep every 0.1 seconds
-	}
-
-	cout << endl; // just for clean CTRL-C aftermath
-
-	ofstream out( fname.c_str() );
-    out.setf(ios::fixed,ios::floatfield);
-    out.precision(3);
-
-	out << "time," << metric << endl;
-	vector<InterfaceStat>::iterator it;
-	for (it = data.begin(); it != data.end(); ++it)
-	{
-		ifstat = *it;
-		out << ifstat.timeDelta << "," << ifstat.value << endl;
 	}
 	out.close();
-
-	#ifdef DEBUG
-	cout.setf(ios::fixed,ios::floatfield);
-    cout.precision(3);
-	for (it = data.begin(); it != data.end(); ++it)
-	{
-		ifstat = *it;
-		cout << "Time: " << ifstat.timeDelta << "\t" << iface << " " 
-			 << metric << ": " << ifstat.value << endl;
-	}
-	cout << endl;
-	#endif
-	// terminate responsibly
-	teardown(sock, link_cache);
 	return 0;
-	*/
 }
+
