@@ -70,14 +70,16 @@ void exitHandler(int dummy)
     running = 0;
 }
 
-void teardown(nl_sock *sock, nl_cache *link_cache)
+void teardown(nl_sock *&sock, nl_cache *&link_cache)
 {
 	nl_close(sock);
 	nl_cache_free(link_cache);
 	nl_socket_free(sock);
+	sock = NULL;
+	link_cache = NULL;
 }
 
-void setupNetlink(nl_sock *sock, nl_cache *link_cache)
+void setupNetlink(nl_sock *&sock, nl_cache *&link_cache)
 {
 	int err = 0;
 	sock = nl_socket_alloc();
