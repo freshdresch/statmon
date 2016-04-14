@@ -20,9 +20,17 @@ AC_ARG_ENABLE([debug],
 esac],[debug=false])
 AM_CONDITIONAL([DEBUG], [test "x${debug}" = "xtrue"])
 
+# override default CXXFLAGS if we are debugging
+if (test "x${debug}" = "xtrue"); then
+   CXXFLAGS="-g -O0"
+fi
+
 # check for necessary programs.
 AC_PATH_TOOL(PKG_CONFIG, pkg-config)
 AC_PROG_CXX([clang++ g++ c++])
+
+# will resolve -std=c++0x or c++11 automatically
+AX_CXX_COMPILE_STDCXX_11
 
 # check for C header files
 AC_CHECK_HEADERS([sys/time.h unistd.h netlink/netlink.h netlink/route/link.h netlink/cache.h])
@@ -35,7 +43,7 @@ AC_CHECK_HEADER_STDBOOL
 AC_TYPE_UINT64_T
 
 # checks for library functions.
-AC_CHECK_FUNCS([gettimeofday signal])
+AC_CHECK_FUNCS([gettimeofday signal getopt])
 
 # checks for libraries.
 # libnl-route-3.0 is a superset of libnl-3.0 

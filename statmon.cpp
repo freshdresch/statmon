@@ -5,6 +5,7 @@
 
 // linux and C includes 
 #include <csignal>
+#include <cstdlib>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -14,6 +15,7 @@
 #include <iomanip>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 // use likely and unlikely for my error codes where I care about timing
 #ifdef __GNUC__
@@ -28,22 +30,143 @@ using namespace std;
 
 static volatile int running = 1;
 
+struct MeasureTarget
+{
+	string iface;
+	string metric;
+	rtnl_link_stat_id_t statId;
+};
+
+struct MeasureTargetHash 
+{
+	size_t operator()(const MeasureTarget& target) const
+	{
+		return std::hash<std::string>()(target.iface) ^
+            (std::hash<std::string>()(target.metric) << 1);
+	}
+};
+
+struct MeasureTargetEqual 
+{
+	bool operator()(const MeasureTarget& lhs, 
+					const MeasureTarget& rhs) const
+	{
+		return (lhs.iface == rhs.iface) && (lhs.metric == rhs.metric);
+	}
+};
+
 struct InterfaceStat
 {
 	double timeDelta;
 	unsigned int value;
 };
 
+typedef vector<MeasureTarget> TargetVec;
+typedef vector<InterfaceStat> StatVec;
+typedef unordered_map<MeasureTarget, StatVec, MeasureTargetHash, MeasureTargetEqual> IfaceData;
+
 void exitHandler(int dummy) 
 {
     running = 0;
 }
 
-void teardown(struct nl_sock *sock, struct nl_cache *link_cache)
+void teardown(nl_sock *sock, nl_cache *link_cache)
 {
 	nl_close(sock);
 	nl_cache_free(link_cache);
 	nl_socket_free(sock);
+}
+
+void setupNetlink(nl_sock *sock, nl_cache *link_cache)
+{
+	int err = 0;
+	sock = nl_socket_alloc();
+	if (!sock) 
+	{
+		cerr << "[ERROR] Unable to allocate netlink socket." << endl;
+		exit(3);
+	}
+	
+	err = nl_connect(sock, NETLINK_ROUTE);
+	if (err < 0) 
+	{
+		nl_perror(err, "Unable to connect socket");
+		nl_socket_free(sock);
+		exit(4);
+	}
+	
+	err = rtnl_link_alloc_cache(sock, AF_UNSPEC, &link_cache);
+	if (err < 0)
+    {
+		nl_perror(err, "Unable to allocate cache");
+		nl_socket_free(sock);
+		exit(5);
+    }
+}
+
+void collectData(const TargetVec &targets, 
+				 IfaceData &data)
+{
+	int err = 0;
+	nl_sock *sock;
+	nl_cache *link_cache;
+	setupNetlink(sock, link_cache);
+
+	TargetVec::const_iterator it;
+	rtnl_link *link;
+	InterfaceStat ifstat;
+	timeval time;
+
+	// end - start gives us the program time without a frame of reference
+	double diff, start, end;
+	// offset - base tells us how long our monitoring loop took
+	// so we sleep the correct amount
+	double offset, base;
+	const double MICRO = 1000000.0;
+	const unsigned int SAMPLE_RATE = 100000;
+
+	gettimeofday(&time, NULL);
+	start = time.tv_sec + (time.tv_usec / MICRO);
+	while(running)
+	{
+		gettimeofday(&time, NULL);
+		base = time.tv_usec;
+
+		err = nl_cache_resync(sock, link_cache, NULL, NULL);
+		if ( unlikely(err < 0) )
+		{
+			nl_perror(err, "Unable to resync cache");
+			teardown(sock, link_cache);
+			exit(6);
+		}
+
+		for (it = targets.begin(); it != targets.end(); ++it)
+		{
+			link = rtnl_link_get_by_name( link_cache, it->iface.c_str() );
+			if ( unlikely(!link) )
+			{
+				cerr << "[ERROR] rtnl: failed to get the link " << it->iface 
+					 << " by name." << endl;
+				teardown(sock, link_cache);
+				exit(7);
+			}
+
+			ifstat.value = rtnl_link_get_stat(link, it->statId);
+			gettimeofday(&time, NULL);
+			end = time.tv_sec + (time.tv_usec / 1000000.0);
+			diff = end - start;
+			ifstat.timeDelta = diff;
+			data[ *it ].push_back(ifstat);
+		}
+
+		gettimeofday(&time, NULL);
+		offset = time.tv_usec;
+        // sleep every 0.1 seconds
+		usleep( SAMPLE_RATE - (offset - base) ); 
+	}
+	// terminate responsibly
+	teardown(sock, link_cache);
+	cout << endl; // just for clean CTRL-C aftermath
 }
 
 bool parseMetric(const string &metric, rtnl_link_stat_id_t &statId)
@@ -63,9 +186,48 @@ bool parseMetric(const string &metric, rtnl_link_stat_id_t &statId)
 	return valid;
 }
 
+void parseConfigFile(char *argv[], TargetVec &targets, const string &inputFile)
+{
+	string iface;
+	string metric;
+	MeasureTarget target;
+    // we are doing file based configuration of targets, inputFile is set
+	if (inputFile != "")
+	{
+		string line;
+		ifstream in( inputFile.c_str() );
+		while (in >> iface >> metric)
+		{
+			target.iface = iface;
+			target.metric = metric;
+			targets.push_back(target);
+		}
+		in.close();
+	}
+    // it is empty, we are not doing file based and only have one target pair
+	else 
+	{
+		iface = argv[1];
+		metric = argv[2];
+
+		target.iface = iface;
+		target.metric = metric;
+		targets.push_back(target);
+	}
+}
+
+
 void printUsage()
 {
-	cout << "Usage: statmon iface metric output" << endl;
+	cout << "Usage:\tstatmon iface metric output" << endl;
+	cout << "\tstatmon -f config output" << endl;
+	cout << endl;
+	cout << "Examples:" << endl;
+	cout << "statmon eth0 rx_packets test.csv" << endl;
+	cout << "statmon -f measure.cfg test.csv" << endl; 
+	cout << endl;
+	cout << "    -f config: read in config file specifying iface metric pairs" << endl;
+	cout << "--file config" << endl;
 	cout << endl;
 	cout << "iface: which interface you want to measure." << endl;
 	cout << "metric: which quantity you want to measure." << endl;
@@ -83,27 +245,112 @@ void printUsage()
 	cout << endl;
 }
 
+
+void parseArgs(int argc, char *argv[], string &inputFile)
+{
+	int ch = 0;
+	while ( (ch = getopt(argc, argv, "f:h")) != -1 )
+	{
+		switch(ch)
+		{
+		case 'f':
+			inputFile = optarg;
+			break;
+		case 'h':
+			printUsage();
+			exit(0);
+		case '?':
+		default:
+			printUsage();
+			exit(1);
+		}
+	}
+}
+
+
 int main(int argc, char *argv[])
 {
+	// no matter which way it is executed, we are expecting precisely four arguments
 	if (argc != 4)
 	{
 		printUsage();
 		return 1;
 	}
 
-	string nic(argv[1]);
-	string metric(argv[2]);
+	string inputFile = "";
+	parseArgs(argc, argv, inputFile);
 	string fname(argv[3]);
 
+	TargetVec targets;
+	parseConfigFile(argv, targets, inputFile);
+
+	TargetVec::iterator itr;
 	rtnl_link_stat_id_t statId;
-	if ( !parseMetric(metric, statId) )
+	for (itr = targets.begin(); itr != targets.end(); ++itr)
 	{
-		cerr << "[ERROR] provided metric is invalid." << endl;
-		cerr << endl;
-		printUsage();
-		return 2;
+		if ( !parseMetric(itr->metric, statId) )
+		{
+			cerr << "[ERROR] provided metric is invalid." << endl;
+			cerr << endl;
+			printUsage();
+			return 2;
+		}
+		itr->statId = statId;
 	}
 
+	#ifdef DEBUG
+	for (itr = targets.begin(); itr != targets.end(); ++itr)
+	{
+		cout << itr->iface << " " << itr->metric << " " << itr->statId << endl;
+	}
+	#endif
+
+	signal(SIGINT, exitHandler);
+	signal(SIGTERM, exitHandler);
+
+	IfaceData data;
+	collectData(targets, data);
+
+	ofstream out( fname.c_str() );
+    out.setf(ios::fixed,ios::floatfield);
+    out.precision(3);
+
+	out << "time,iface,metric,value" << endl;
+	MeasureTarget target;
+	InterfaceStat ifstat;
+	StatVec stats;
+	IfaceData::iterator dataItr;
+	StatVec::iterator statItr;
+	for (dataItr = data.begin(); dataItr != data.end(); ++dataItr)
+	{
+		target = dataItr->first;
+		stats = dataItr->second;
+		for (statItr = stats.begin(); statItr != stats.end(); ++statItr)
+		{
+			out << ifstat.timeDelta << "," << target.iface << "," 
+				<< target.metric << "," << ifstat.value << endl;
+		}
+	}
+	out.close();
+
+	#ifdef DEBUG
+	cout.setf(ios::fixed,ios::floatfield);
+    cout.precision(3);
+	for (dataItr = data.begin(); dataItr != data.end(); ++dataItr)
+	{
+		target = dataItr->first;
+		stats = dataItr->second;
+		for (statItr = stats.begin(); statItr != stats.end(); ++statItr)
+		{
+			cout << ifstat.timeDelta << "," << target.iface << "," 
+				 << target.metric << "," << ifstat.value << endl;
+		}
+	}
+	cout << endl;
+	#endif
+	return 0;
+
+	/*
 	signal(SIGINT, exitHandler);
 	signal(SIGTERM, exitHandler);
 
@@ -137,7 +384,7 @@ int main(int argc, char *argv[])
 		return 5;
     }
 
-	link = rtnl_link_get_by_name(link_cache, nic.c_str());
+	link = rtnl_link_get_by_name(link_cache, iface.c_str());
 	if (!link)
     {
 		cerr << "[ERROR] rtnl: failed to get the link by name." << endl;
@@ -172,7 +419,7 @@ int main(int argc, char *argv[])
 			return 7;
 		}
 
-		link = rtnl_link_get_by_name(link_cache, nic.c_str());
+		link = rtnl_link_get_by_name(link_cache, iface.c_str());
 		if ( unlikely(!link) )
 		{
 			cerr << "[ERROR] rtnl: failed to get the link by name." << endl;
@@ -215,7 +462,7 @@ int main(int argc, char *argv[])
 	for (it = data.begin(); it != data.end(); ++it)
 	{
 		ifstat = *it;
-		cout << "Time: " << ifstat.timeDelta << "\t" << nic << " " 
+		cout << "Time: " << ifstat.timeDelta << "\t" << iface << " " 
 			 << metric << ": " << ifstat.value << endl;
 	}
 	cout << endl;
@@ -223,4 +470,5 @@ int main(int argc, char *argv[])
 	// terminate responsibly
 	teardown(sock, link_cache);
 	return 0;
+	*/
 }
