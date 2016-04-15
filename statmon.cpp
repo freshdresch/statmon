@@ -17,53 +17,18 @@
 #include <vector>
 #include <unordered_map>
 
-// use likely and unlikely for my error codes where I care about timing
-#ifdef __GNUC__
-#define likely(x)       __builtin_expect(!!(x), 1)
-#define unlikely(x)     __builtin_expect(!!(x), 0)
-#else
-#define likely(x)       (x)
-#define unlikely(x)     (x)
-#endif
+// header file with constants and struct definitions
+#include "statmon.hpp"
+
 
 using namespace std;
 
-static volatile int running = 1;
-
-struct MeasureTarget
-{
-	string iface;
-	string metric;
-	rtnl_link_stat_id_t statId;
-};
-
-struct MeasureTargetHash 
-{
-	size_t operator()(const MeasureTarget& target) const
-	{
-		return std::hash<std::string>()(target.iface) ^
-            (std::hash<std::string>()(target.metric) << 1);
-	}
-};
-
-struct MeasureTargetEqual 
-{
-	bool operator()(const MeasureTarget& lhs, 
-					const MeasureTarget& rhs) const
-	{
-		return (lhs.iface == rhs.iface) && (lhs.metric == rhs.metric);
-	}
-};
-
-struct InterfaceStat
-{
-	double timeDelta;
-	unsigned int value;
-};
 
 typedef vector<MeasureTarget> TargetVec;
 typedef vector<InterfaceStat> StatVec;
 typedef unordered_map<MeasureTarget, StatVec, MeasureTargetHash, MeasureTargetEqual> IfaceData;
+
+static volatile int running = 1;
 
 void exitHandler(int dummy) 
 {
@@ -86,7 +51,7 @@ void setupNetlink(nl_sock *&sock, nl_cache *&link_cache)
 	if (!sock) 
 	{
 		cerr << "[ERROR] Unable to allocate netlink socket." << endl;
-		exit(3);
+		exit( StatmonConstants::FAILED_ALLOC_NETLINK_SOCK );
 	}
 	
 	err = nl_connect(sock, NETLINK_ROUTE);
@@ -94,7 +59,7 @@ void setupNetlink(nl_sock *&sock, nl_cache *&link_cache)
 	{
 		nl_perror(err, "Unable to connect socket");
 		nl_socket_free(sock);
-		exit(4);
+		exit( StatmonConstants::FAILED_CONN_NETLINK_SOCK );
 	}
 	
 	err = rtnl_link_alloc_cache(sock, AF_UNSPEC, &link_cache);
@@ -102,7 +67,7 @@ void setupNetlink(nl_sock *&sock, nl_cache *&link_cache)
     {
 		nl_perror(err, "Unable to allocate cache");
 		nl_socket_free(sock);
-		exit(5);
+		exit( StatmonConstants::FAILED_ALLOC_LINK_CACHE );
     }
 }
 
@@ -123,11 +88,9 @@ void collectData(const TargetVec &targets,
 	// offset - base tells us how long our monitoring loop took
 	// so we sleep the correct amount
 	double offset, base;
-	const double MICRO = 1000000.0;
-	const unsigned int SAMPLE_RATE = 100000;
 
 	gettimeofday(&time, NULL);
-	start = time.tv_sec + (time.tv_usec / MICRO);
+	start = time.tv_sec + (time.tv_usec / StatmonConstants::MICRO);
 	while(running)
 	{
 		gettimeofday(&time, NULL);
@@ -138,7 +101,7 @@ void collectData(const TargetVec &targets,
 		{
 			nl_perror(err, "Unable to resync cache");
 			teardownNetlink(sock, link_cache);
-			exit(6);
+			exit( StatmonConstants::FAILED_RESYNC_CACHE );
 		}
 
 		for (const auto &target : targets)
@@ -149,7 +112,7 @@ void collectData(const TargetVec &targets,
 				cerr << "[ERROR] rtnl: failed to get the link " << target.iface 
 					 << " by name." << endl;
 				teardownNetlink(sock, link_cache);
-				exit(7);
+				exit( StatmonConstants::FAILED_GET_LINK_BY_NAME );
 			}
 
 			ifstat.value = rtnl_link_get_stat(link, target.statId);
@@ -163,7 +126,7 @@ void collectData(const TargetVec &targets,
 		gettimeofday(&time, NULL);
 		offset = time.tv_usec;
         // sleep every 0.1 seconds
-		usleep( SAMPLE_RATE - (offset - base) ); 
+		usleep( StatmonConstants::SAMPLE_RATE - (offset - base) ); 
 	}
 	// terminate responsibly
 	teardownNetlink(sock, link_cache);
@@ -275,7 +238,7 @@ int main(int argc, char *argv[])
 	if (argc != 4)
 	{
 		printUsage();
-		return 1;
+		return StatmonConstants::INVALID_NUM_ARGS;
 	}
 
 	string inputFile = "";
@@ -292,7 +255,7 @@ int main(int argc, char *argv[])
 			cerr << "[ERROR] provided metric is invalid." << endl;
 			cerr << endl;
 			printUsage();
-			return 2;
+			return StatmonConstants::INVALID_METRIC;
 		}
 		target.statId = statId;
 	}
@@ -305,10 +268,10 @@ int main(int argc, char *argv[])
 
 	ofstream out( fname.c_str() );
     out.setf(ios::fixed,ios::floatfield);
-    out.precision(3);
+    out.precision( StatmonConstants::OUTPUT_PRECISION );
 	#ifdef DEBUG
 	cout.setf(ios::fixed,ios::floatfield);
-    cout.precision(3);
+    cout.precision( StatmonConstants::OUTPUT_PRECISION );
 	#endif
 
 	out << "time,iface,metric,value" << endl;
@@ -329,6 +292,6 @@ int main(int argc, char *argv[])
 		}
 	}
 	out.close();
-	return 0;
+	return StatmonConstants::SUCCESS;
 }
 
