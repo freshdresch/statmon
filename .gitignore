@@ -1,3 +1,4 @@
+output/
 .deps/
 Makefile
 Makefile.in
