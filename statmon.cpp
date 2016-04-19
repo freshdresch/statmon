@@ -84,7 +84,7 @@ void collectData(const TargetVec &targets,
     double diff, start, end;
     // offset - base tells us how long our monitoring loop took
     // so we sleep the correct amount
-    double offset, base;
+    double offset, base, sleepTime;
     unsigned int i = 0;
     gettimeofday(&time, NULL);
     start = time.tv_sec + (time.tv_usec / StatmonConstants::MICRO);
@@ -124,7 +124,15 @@ void collectData(const TargetVec &targets,
         ++i;
         gettimeofday(&time, NULL);
         offset = time.tv_usec;
-        usleep( StatmonConstants::SAMPLE_RATE - (offset - base) ); 
+
+		// handle tv_usec wrap around at 1,000,000 us
+		if ( unlikely(offset < base) ) offset += StatmonConstants::MICRO;
+		sleepTime = StatmonConstants::SAMPLE_RATE - (offset - base);
+		// if sleepTime is negative, we have already taken longer than sampling rate
+		// and there is no need to sleep. No unlikely macro because it depends
+		// what the user sets the sampling rate to.
+		if (sleepTime > 0.0) 
+			usleep(sleepTime);
     }
     // terminate responsibly
     teardownNetlink(sock, link_cache);
@@ -267,7 +275,7 @@ int main(int argc, char *argv[])
     ofstream out( fname.c_str() );
     out.setf(ios::fixed,ios::floatfield);
     out.precision( StatmonConstants::OUTPUT_PRECISION );
-    #ifdef DEBUG
+	#ifdef DEBUG
     cout.setf(ios::fixed,ios::floatfield);
     cout.precision( StatmonConstants::OUTPUT_PRECISION );
     #endif
