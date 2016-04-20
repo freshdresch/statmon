@@ -80,18 +80,23 @@ void collectData(const TargetVec &targets,
     rtnl_link *link;
     InterfaceStat ifstat;
     timeval time;
+
     // end - start gives us the program time without a frame of reference
+	// diff, start, and end are in seconds
     double diff, start, end;
+
     // offset - base tells us how long our monitoring loop took
     // so we sleep the correct amount
+	// offset, base, and sleepTime are in microseconds since I am using usleep
     double offset, base, sleepTime;
     unsigned int i = 0;
+
     gettimeofday(&time, NULL);
     start = time.tv_sec + (time.tv_usec / StatmonConstants::MICRO);
     while(running)
     {
         gettimeofday(&time, NULL);
-        base = time.tv_usec;
+        base = (time.tv_sec * StatmonConstants::MICRO) + time.tv_usec;
 
         err = nl_cache_resync(sock, link_cache, NULL, NULL);
         if ( unlikely(err < 0) )
@@ -123,11 +128,11 @@ void collectData(const TargetVec &targets,
 
         ++i;
         gettimeofday(&time, NULL);
-        offset = time.tv_usec;
-
-		// handle tv_usec wrap around at 1,000,000 us
-		if ( unlikely(offset < base) ) offset += StatmonConstants::MICRO;
+        offset = (time.tv_sec * StatmonConstants::MICRO) + time.tv_usec;
 		sleepTime = StatmonConstants::SAMPLE_RATE - (offset - base);
+		#ifdef DEBUG
+		cout << "sleeping for " << sleepTime << " microseconds." << endl;
+		#endif
 		// if sleepTime is negative, we have already taken longer than sampling rate
 		// and there is no need to sleep. No unlikely macro because it depends
 		// what the user sets the sampling rate to.
@@ -275,10 +280,6 @@ int main(int argc, char *argv[])
     ofstream out( fname.c_str() );
     out.setf(ios::fixed,ios::floatfield);
     out.precision( StatmonConstants::OUTPUT_PRECISION );
-	#ifdef DEBUG
-    cout.setf(ios::fixed,ios::floatfield);
-    cout.precision( StatmonConstants::OUTPUT_PRECISION );
-    #endif
 
     out << "i,time,iface,metric,value" << endl;
     MeasureTarget target;
@@ -291,10 +292,6 @@ int main(int argc, char *argv[])
         {
             out << ifstat.iter << "," << ifstat.timeDelta << "," << target.iface << "," 
                 << target.metric << "," << ifstat.value << endl;
-            #ifdef DEBUG
-            cout << ifstat.iter << "," << ifstat.timeDelta << "," << target.iface << "," 
-                 << target.metric << "," << ifstat.value << endl;
-            #endif
         }
     }
     out.close();
