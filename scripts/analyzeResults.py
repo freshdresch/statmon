@@ -85,12 +85,10 @@ for line in lines:
 for iface in data:
 	for metric in data[iface]:
 		if len( data[iface][metric]["values"] ) == 0:
-			print("{0} {1}".format(iface, metric) )
 			continue
 		vals = data[iface][metric]["values"]
 		# need to iterate in reverse so I don't ruin my data points for the next operation
 		for i in range( len(vals) - 1, 0, -1 ): 
-			print( "{0} - {1} = {2}".format(vals[i], vals[i-1], vals[i]-vals[i-1]) )
 			vals[i] = vals[i] - vals[i-1]		
 		vals[0] = 0
 		data[iface][metric]["values"] = vals
@@ -99,7 +97,6 @@ for iface in data:
 for iface in data:
 	for metric in data[iface]:
 		if len( data[iface][metric]["values"] ) == 0:
-			print("{0} {1}".format(iface, metric) )
 			continue
 		times = data[iface][metric]["times"]
 		vals = data[iface][metric]["values"]
@@ -127,7 +124,6 @@ numSamples = int( round( (1e6) / sampleRate ) )
 for iface in data:
 	for metric in data[iface]:
 		if len( data[iface][metric]["values"] ) == 0:
-			print("{0} {1}".format(iface, metric) )
 			continue
 		times = data[iface][metric]["times"]
 		vals = data[iface][metric]["values"]
@@ -143,31 +139,32 @@ for iface in data:
 for iface in data:
 	for metric in data[iface]:
 		if len( data[iface][metric]["values"] ) == 0:
-			print("{0} {1}".format(iface, metric) )
 			continue
 		times = data[iface][metric]["times"]
 		baseTime = times[0]
 		data[iface][metric]["times"] = [ time - baseTime for time in times ]
 
+"""
 for iface in data:
 	for metric in data[iface]:
-		if len( data[iface][metric] ) == 0:
+		if len( data[iface][metric]["values"] ) == 0:
 			print("{0} {1}".format(iface, metric) )
 			continue
 		print( data[iface][metric] )
+		print( "{0} vs {1}".format( len(data[iface][metric]["times"]), len(data[iface][metric]["values"]) ) )
 		print("\n"*2)
+"""
 
 
-# now we can perform some statistics
 for iface in data:
 	for metric in data[iface]:
-		if len( data[iface][metric] ) == 0:
-			print("{0} {1}".format(iface, metric) )
+		if len( data[iface][metric]["values"] ) == 0:
+			print("There were no " + titles[metric] + "\n")
 			continue
+		times = data[iface][metric]["times"]
 		vals = data[iface][metric]["values"]
-		s = sum( vals )
-		print( "{0} Total: {1:0.2f}".format( titles[metric], s) )
-		m = np.mean( vals )
-		print( "{0} Average: {1:0.2f}".format( titles[metric], m) )
-
+		print( "Total sampled time for {0} on {1}: {2:0.2f} seconds".format( titles[metric], iface, times[ len(times)-1 ] - times[0] ) )
+		print( "{0} total on {1}: {2:0.2f}".format( titles[metric], iface, sum(vals) ) )
+		print( "Mean {0} per second on {1}: {2:0.2f}".format( titles[metric], iface, np.mean(vals) / (sampleRate * (1e-6)) ) )
+		print("")
 
