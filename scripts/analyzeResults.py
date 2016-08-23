@@ -158,7 +158,6 @@ for iface in data:
 		print("\n"*2)
 
 
-
 # now we can perform some statistics
 for iface in data:
 	for metric in data[iface]:
@@ -170,55 +169,5 @@ for iface in data:
 		print( "{0} Total: {1:0.2f}".format( titles[metric], s) )
 		m = np.mean( vals )
 		print( "{0} Average: {1:0.2f}".format( titles[metric], m) )
-
-
-
-# get rid of first and last sample for each, because they might have been partial samples
-# for example, sample interval is 0.25 seconds but the test started 0.2 seconds in.
-"""
-for iface in data:
-	for metric in data[iface]:
-		if len( data[iface][metric] ) == 0:
-			print("{0} {1}".format(iface, metric) )
-			continue
-		editList = data[iface][metric]
-		editList.pop(0)
-		editList.pop()
-		data[iface][metric] = editList
-
-	
-
-
-# also adjust all times to the frame of reference (base time)
-for iface in data:
-	for metric in data[iface]:
-		if len( data[iface][metric] ) == 0:
-			print("{0} {1}".format(iface, metric) )
-			continue
-		points = data[iface][metric]
-		baseTime = points[0][0]
-		# need to iterate in reverse so I don't ruin my data points for the next operation
-		for i in range( len(points) - 1, 0, -1 ): #1, len(points) ):
-			# this gets rid of values after our test finished
-			if ( points[i][1] - points[i-1][1] ) <= tolerances[metric]:
-				continue
-			print( "{0} - {1} = {2}".format(points[i][1], points[i-1][1], points[i][1] - points[i-1][1]) )
-			points[i] = ( points[i][0] - baseTime, points[i][1] - points[i-1][1] )
-		points[0] = (0.0, 0.0)
-		data[iface][metric] = points
-		print( data[iface][metric] )
-		print("\n"*2)
-
-# remove ones on the end
-for iface in data:
-	for metric in data[iface]:
-		if len( data[iface][metric] ) == 0:
-			print("{0} {1}".format(iface, metric) )
-			continue
-		editList = data[iface][metric]
-		for i in range( numSamples + 1 ):
-			editList.pop()
-		data[iface][metric] = editList
-"""
 
 
