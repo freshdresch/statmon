@@ -13,6 +13,8 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <string>
+#include <stdexcept>
 #include <vector>
 #include <unordered_map>
 
@@ -129,7 +131,7 @@ void collectData(const TargetVec &targets,
         ++i;
         gettimeofday(&time, NULL);
         offset = (time.tv_sec * StatmonConstants::MICRO) + time.tv_usec;
-		sleepTime = StatmonConstants::SAMPLE_RATE - (offset - base);
+		sleepTime = StatmonConstants::sampleRate - (offset - base);
 		#ifdef DEBUG
 		cout << "sleeping for " << sleepTime << " microseconds." << endl;
 		#endif
@@ -194,18 +196,24 @@ void parseConfigFile(char *argv[], TargetVec &targets, const string &inputFile)
 
 void printUsage()
 {
-    cout << "Usage:\tstatmon iface metric output" << endl;
-    cout << "\tstatmon -f config output" << endl;
+    cout << "Usage:\tstatmon iface metric rate output" << endl;
+    cout << "\tstatmon -f config rate output" << endl;
     cout << endl;
     cout << "Examples:" << endl;
-    cout << "statmon eth0 rx_packets test.csv" << endl;
-    cout << "statmon -f measure.cfg test.csv" << endl; 
+    cout << "statmon eth0 rx_packets 250000 test.csv" << endl;
+    cout << "statmon -f measure.cfg 250000 test.csv" << endl; 
     cout << endl;
-    cout << "    -f config: read in config file specifying iface metric pairs" << endl;
+	cout << "Positional Arguments:" << endl;
+    cout << "    iface     which interface you want to measure." << endl;
+    cout << "    metric    which quantity you want to measure." << endl;
+    cout << "    rate      the rate at which the program samples the specified metrics (in MICROseconds)" << endl;
+    cout << "    output    the name of the output csv file for the measurements." << endl;
+    cout << endl;
+	cout << "Optional Arguments:" << endl;
+    cout << "    -f config    read in config file specifying iface metric pairs" << endl;
     cout << "--file config" << endl;
     cout << endl;
-    cout << "iface: which interface you want to measure." << endl;
-    cout << "metric: which quantity you want to measure." << endl;
+	cout << "Valid metrics:" << endl;
     cout << "    rx_packets" << endl; 
     cout << "    tx_packets" << endl; 
     cout << "    rx_bytes" << endl;
@@ -216,8 +224,6 @@ void printUsage()
     cout << "    tx_dropped" << endl;
     cout << "    rx_fifo_errors" << endl;
     cout << "    tx_fifo_errors" << endl;
-    cout << "output: the name of the output csv file for the measurements." << endl;
-    cout << endl;
 }
 
 
@@ -246,7 +252,7 @@ void parseArgs(int argc, char *argv[], string &inputFile)
 int main(int argc, char *argv[])
 {
     // no matter which way it is executed, we are expecting precisely four arguments
-    if (argc != 4)
+    if (argc != 5)
     {
         printUsage();
         return StatmonConstants::INVALID_NUM_ARGS;
@@ -254,7 +260,13 @@ int main(int argc, char *argv[])
 
     string inputFile = "";
     parseArgs(argc, argv, inputFile);
-    string fname(argv[3]);
+	try {
+		StatmonConstants::sampleRate = stoul( argv[3] );
+	} catch (...) {
+		cerr << "The argument for sample rate is not a valid unsigned integer." << endl;
+		return StatmonConstants::INVALID_SAMPLE_RATE;
+	}
+    string fname(argv[4]);
 
     TargetVec targets;
     parseConfigFile(argv, targets, inputFile);
@@ -278,7 +290,7 @@ int main(int argc, char *argv[])
     collectData(targets, data);
 
     ofstream out( fname.c_str() );
-    out.setf(ios::fixed,ios::floatfield);
+    out.setf(ios::fixed, ios::floatfield);
     out.precision( StatmonConstants::OUTPUT_PRECISION );
 
     out << "i,time,iface,metric,value" << endl;

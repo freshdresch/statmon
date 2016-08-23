@@ -1,10 +1,15 @@
 #!/bin/bash
 
-if [ $# -ne 2 ]; then
-	echo "Usage: $0 input.cfg output.csv"
+if [ $# -ne 4 ]; then
+	echo "Usage: `basename $0` sampleRate sleepTime input.cfg output.csv"
 	exit 1
 fi
 
-./statmon -f $1 $2 &
-sleep 30
+SAMPLE_RATE=$1
+SLEEP_TIME=$2
+INFILE=$3
+OUTFILE=$4
+
+./statmon -f $INFILE $SAMPLE_RATE $OUTFILE &
+sleep $SLEEP_TIME
 killall --signal SIGINT statmon
