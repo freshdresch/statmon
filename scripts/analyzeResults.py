@@ -2,6 +2,7 @@
 
 import numpy as np
 import sys
+from statsmodels.distributions.empirical_distribution import ECDF
 
 
 if len(sys.argv) != 4:
@@ -110,16 +111,18 @@ for iface in data:
 
 
 """ We are shaving off a particular number of samples on each end of the list.
-The first sample we are removing is to avoid partial samples.
+We remove the first and last valid sample in order to avoid partial samples.
 For example, if we are sampling every 0.25 seconds, and the packet generator 
 started 0.2 seconds into the current sample, it would only get 0.05 seconds
 of results but it thinks it is for the whole sample interval.
 
-In addition, we are shaving off 1 seconds' worth of samples on each end.
+In addition, we are shaving off 1 seconds' worth of samples at the beginning.
 This is to smooth away any oddities with the testing environment.
+In particular, sometimes dpdk pktgen has a "ramp up" period.
 
 NOTE: the sampleRate argument is in microseconds.
 """
+# this is a formula to get the number of samples in one second
 numSamples = int( round( (1e6) / sampleRate ) )
 for iface in data:
 	for metric in data[iface]:
@@ -127,11 +130,13 @@ for iface in data:
 			continue
 		times = data[iface][metric]["times"]
 		vals = data[iface][metric]["values"]
+		# remove potential partial sample on the end
+		times.pop()
+		vals.pop()
+		# remove potential partial sample on beginning, plus 1 seconds worth of ramp up time
 		for i in range( numSamples + 1 ):
 			times.pop(0)
 			vals.pop(0)
-			times.pop()
-			vals.pop()
 		data[iface][metric]["times"] = times
 		data[iface][metric]["values"] = vals
 
@@ -144,18 +149,6 @@ for iface in data:
 		baseTime = times[0]
 		data[iface][metric]["times"] = [ time - baseTime for time in times ]
 
-"""
-for iface in data:
-	for metric in data[iface]:
-		if len( data[iface][metric]["values"] ) == 0:
-			print("{0} {1}".format(iface, metric) )
-			continue
-		print( data[iface][metric] )
-		print( "{0} vs {1}".format( len(data[iface][metric]["times"]), len(data[iface][metric]["values"]) ) )
-		print("\n"*2)
-"""
-
-
 for iface in data:
 	for metric in data[iface]:
 		if len( data[iface][metric]["values"] ) == 0:
@@ -163,8 +156,27 @@ for iface in data:
 			continue
 		times = data[iface][metric]["times"]
 		vals = data[iface][metric]["values"]
+		scaled_vals = [ val / ( sampleRate * (1e-6) ) for val in vals ]
+
 		print( "Total sampled time for {0} on {1}: {2:0.2f} seconds".format( titles[metric], iface, times[ len(times)-1 ] - times[0] ) )
-		print( "{0} total on {1}: {2:0.2f}".format( titles[metric], iface, sum(vals) ) )
-		print( "Mean {0} per second on {1}: {2:0.2f}".format( titles[metric], iface, np.mean(vals) / (sampleRate * (1e-6)) ) )
+		print( "Number of samples: {0}".format( len(vals) ) )
+		print( "{0} total on {1}: {2}".format( titles[metric], iface, sum(vals) ) )
+		print( "Mean {0} per second on {1}: {2:0.2f}".format( titles[metric], iface, np.mean(scaled_vals) ) )
+		print( "Standard Deviation of {0} per second on {1}: {2:0.2f}".format( titles[metric], iface, np.std(scaled_vals) ) )
 		print("")
+
+		"""
+		spread = []
+		for i in range( 1, len(scaled_vals) ):
+			raw = ( scaled_vals[i] - scaled_vals[i-1] ) / scaled_vals[i-1]
+			spread.append(raw)
+
+		print( "Mean spread for {0} per second on {1}: {2:0.2f}".format( titles[metric], iface, np.mean(spread) ) )
+		xvals = np.linspace( min(spread), max(spread), 100 )
+		ecdf = ECDF(spread)
+		spread.sort()
+		print(spread)
+		print("")
+		print( ecdf(spread) )
+		"""
 
