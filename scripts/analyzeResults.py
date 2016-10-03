@@ -26,10 +26,10 @@ However, if it is above our tolerance level, we now assume the test has started.
 Once it drops back below the tolerance level, we assume the test is over.
 """
 # tolerance will be of the form metric --> tolerance value
-tolerances = { "rx_packets"     : 50,
-			   "tx_packets"     : 50,
-			   "rx_bytes"       : 1000,
-			   "tx_bytes"       : 1000,
+tolerances = { "rx_packets"     : 3,
+			   "tx_packets"     : 3,
+			   "rx_bytes"       : 200,
+			   "tx_bytes"       : 200,
 			   "rx_dropped"     : 0,
 			   "tx_dropped"     : 0,
 			   "rx_fifo_errors" : 0,
@@ -38,6 +38,7 @@ tolerances = { "rx_packets"     : 50,
 # data will be of the form iface --> metric --> time   --> list
 #                                           --> values --> list
 data = {}
+scaled_data = {}
 # base will be of the form iface --> metric --> tuple( time, baseVal )
 base = {}
 
@@ -49,9 +50,11 @@ with open( sys.argv[1], "r" ) as f:
 		iface, metric = line.strip().split(' ')
 		if iface not in data:
 			data[iface] = {}
+			scaled_data[iface] = {}
 			base[iface] = {}
 		if metric not in data[iface]:
 			data[iface][metric] = { "times" : [ ], "values" : [ ] }
+			scaled_data[iface][metric] = { "times" : [ ], "values" : [ ] }
 			base[iface][metric] = (-1.0, -1.0)
 
 # parse results file
@@ -81,19 +84,6 @@ for line in lines:
 	data[iface][metric]["times"].append( float(time) )
 	data[iface][metric]["values"].append( float(val) )
 
-
-# adjust all data values to only capture the change in the sample period
-for iface in data:
-	for metric in data[iface]:
-		if len( data[iface][metric]["values"] ) == 0:
-			continue
-		vals = data[iface][metric]["values"]
-		# need to iterate in reverse so I don't ruin my data points for the next operation
-		for i in range( len(vals) - 1, 0, -1 ): 
-			vals[i] = vals[i] - vals[i-1]		
-		vals[0] = 0
-		data[iface][metric]["values"] = vals
-		
 # eliminate any samples on the end that are after the test has finished
 for iface in data:
 	for metric in data[iface]:
@@ -108,7 +98,6 @@ for iface in data:
 			i-=1
 		data[iface][metric]["times"] = times
 		data[iface][metric]["values"] = vals
-
 
 """ We are shaving off a particular number of samples on each end of the list.
 We remove the first and last valid sample in order to avoid partial samples.
@@ -134,20 +123,14 @@ for iface in data:
 		times.pop()
 		vals.pop()
 		# remove potential partial sample on beginning, plus 1 seconds worth of ramp up time
+		# assuming there is anything still in the list
 		for i in range( numSamples + 1 ):
-			times.pop(0)
-			vals.pop(0)
+			if len(times) > 0:
+				times.pop(0)
+			if len(vals) > 0:
+				vals.pop(0)
 		data[iface][metric]["times"] = times
 		data[iface][metric]["values"] = vals
-
-# now that we are done shaving off values, we can calculate the correct referential time interval
-for iface in data:
-	for metric in data[iface]:
-		if len( data[iface][metric]["values"] ) == 0:
-			continue
-		times = data[iface][metric]["times"]
-		baseTime = times[0]
-		data[iface][metric]["times"] = [ time - baseTime for time in times ]
 
 for iface in data:
 	for metric in data[iface]:
@@ -156,15 +139,13 @@ for iface in data:
 			continue
 		times = data[iface][metric]["times"]
 		vals = data[iface][metric]["values"]
-		scaled_vals = [ val / ( sampleRate * (1e-6) ) for val in vals ]
-
+		valRange = vals[ len(vals) - 1 ] - vals[0]
+		timeRange = times[ len(times) - 1] - times[0]
 		print( "Total sampled time for {0} on {1}: {2:0.2f} seconds".format( titles[metric], iface, times[ len(times)-1 ] - times[0] ) )
 		print( "Number of samples: {0}".format( len(vals) ) )
-		print( "{0} total on {1}: {2}".format( titles[metric], iface, sum(vals) ) )
-		print( "Mean {0} per second on {1}: {2:0.2f}".format( titles[metric], iface, np.mean(scaled_vals) ) )
-		print( "Standard Deviation of {0} per second on {1}: {2:0.2f}".format( titles[metric], iface, np.std(scaled_vals) ) )
-		print("")
-
+		print( "{0} total on {1}: {2}".format( titles[metric], iface, valRange ) )
+		print( "Time average of {0} on {1}: {2:0.2f}".format( titles[metric], iface, float(valRange) / float(timeRange) ) )
+		
 		"""
 		spread = []
 		for i in range( 1, len(scaled_vals) ):
