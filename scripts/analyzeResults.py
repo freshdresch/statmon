@@ -6,7 +6,7 @@ from statsmodels.distributions.empirical_distribution import ECDF
 
 
 if len(sys.argv) != 4:
-	print("Usage: analyzeMeasure measure.cfg results.csv sampleRate")
+	print("Usage: analyzeResults.py <sample rate> <input config file> <output results csv>")
 	sys.exit(1)
 
 titles = { "rx_packets"     : "RX Packets",
@@ -42,10 +42,10 @@ scaled_data = {}
 # base will be of the form iface --> metric --> tuple( time, baseVal )
 base = {}
 
-sampleRate = int( sys.argv[3] )
+sampleRate = int( sys.argv[1] )
 
 # parse measure configuration file
-with open( sys.argv[1], "r" ) as f:
+with open( sys.argv[2], "r" ) as f:
 	for line in f:
 		iface, metric = line.strip().split(' ')
 		if iface not in data:
@@ -58,7 +58,7 @@ with open( sys.argv[1], "r" ) as f:
 			base[iface][metric] = (-1.0, -1.0)
 
 # parse results file
-with open( sys.argv[2], "r" ) as f:
+with open( sys.argv[3], "r" ) as f:
 	lines = f.readlines()
 lines = [ line.strip() for line in lines ]
 # remove header line in csv
@@ -132,6 +132,7 @@ for iface in data:
 		data[iface][metric]["times"] = times
 		data[iface][metric]["values"] = vals
 
+ns2sec=1000000000.0
 for iface in data:
 	for metric in data[iface]:
 		if len( data[iface][metric]["values"] ) == 0:
@@ -140,11 +141,12 @@ for iface in data:
 		times = data[iface][metric]["times"]
 		vals = data[iface][metric]["values"]
 		valRange = vals[ len(vals) - 1 ] - vals[0]
-		timeRange = times[ len(times) - 1] - times[0]
-		print( "Total sampled time for {0} on {1}: {2:0.2f} seconds".format( titles[metric], iface, times[ len(times)-1 ] - times[0] ) )
+		timeRange = ( times[ len(times) - 1] - times[0] ) / ns2sec
+
+		print( "Total sampled time for {0} on {1}: {2:0.2f} seconds".format(titles[metric], iface, timeRange) )
 		print( "Number of samples: {0}".format( len(vals) ) )
 		print( "{0} total on {1}: {2}".format( titles[metric], iface, valRange ) )
-		print( "Time average of {0} on {1}: {2:0.2f}".format( titles[metric], iface, float(valRange) / float(timeRange) ) )
+		print( "Time average of {0} on {1}: {2:0.2f}".format( titles[metric], iface, float(valRange) / timeRange ) )
 		
 		"""
 		spread = []
